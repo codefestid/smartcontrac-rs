@@ -1,0 +1,22 @@
+type Error = variant { NotFound : record { msg : text } };
+type Rental = record {
+  id : nat64;
+  daily_rate : nat64;
+  motorcycle_brand : text;
+  rental_date : text;
+  rental_days : nat64;
+  renter_name : text;
+};
+type RentalInput = record {
+  daily_rate : nat64;
+  motorcycle_brand : text;
+  rental_date : text;
+  rental_days : nat64;
+  renter_name : text;
+};
+type Result = variant { Ok : Rental; Err : Error };
+service : {
+  add_rental : (RentalInput) -> (opt Rental);
+  delete_rental : (nat64) -> (Result);
+  get_rental : (nat64) -> (Result) query;
+}
