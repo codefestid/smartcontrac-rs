@@ -9,6 +9,9 @@ use std::{borrow::Cow, cell::RefCell};
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 type IdCell = Cell<u64, Memory>;
 
+const COUNTER_MEMORY_ID: MemoryId = MemoryId::new(0);
+const RENTAL_STORAGE_MEMORY_ID: MemoryId = MemoryId::new(1);
+
 #[derive(candid::CandidType, Clone, Serialize, Deserialize, Default)]
 struct Rental {
     id: u64,
@@ -40,12 +43,12 @@ thread_local! {
     );
 
     static ID_COUNTER: RefCell<IdCell> = RefCell::new(
-        IdCell::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(0))), 0)
+        IdCell::init(MEMORY_MANAGER.with(|m| m.borrow().get(COUNTER_MEMORY_ID)), 0)
             .expect("Cannot create a counter")
     );
 
     static RENTAL_STORAGE: RefCell<StableBTreeMap<u64, Rental, Memory>> = RefCell::new(
-        StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(1))))
+        StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(RENTAL_STORAGE_MEMORY_ID)))
     );
 }
 
@@ -60,12 +63,9 @@ struct RentalInput {
 
 #[ic_cdk::query]
 fn get_rental(id: u64) -> Result<Rental, Error> {
-    match _get_rental(&id) {
-        Some(rental) => Ok(rental),
-        None => Err(Error::NotFound {
-            msg: format!("Rental with id={} not found", id),
-        }),
-    }
+    _get_rental(&id).ok_or_else(|| Error::NotFound {
+        msg: format!("Rental with id={} not found", id),
+    })
 }
 
 #[ic_cdk::update]
@@ -73,9 +73,10 @@ fn add_rental(input: RentalInput) -> Option<Rental> {
     let id = ID_COUNTER
         .with(|counter| {
             let current_value = *counter.borrow().get();
-            counter.borrow_mut().set(current_value + 1)
+            counter.borrow_mut().set(current_value + 1)?;
+            Ok(current_value)
         })
-        .expect("cannot increment id counter");
+        .ok()?;
 
     let rental = Rental {
         id,
@@ -86,18 +87,15 @@ fn add_rental(input: RentalInput) -> Option<Rental> {
         rental_days: input.rental_days,
     };
 
-    RENTAL_STORAGE.with(|service| service.borrow_mut().insert(rental.id, rental.clone()));
+    RENTAL_STORAGE.with(|service| service.borrow_mut().insert(id, rental.clone()));
     Some(rental)
 }
 
 #[ic_cdk::update]
 fn delete_rental(id: u64) -> Result<Rental, Error> {
-    match RENTAL_STORAGE.with(|service| service.borrow_mut().remove(&id)) {
-        Some(rental) => Ok(rental),
-        None => Err(Error::NotFound {
-            msg: format!("Rental with id={} not found", id),
-        }),
-    }
+    RENTAL_STORAGE.with(|service| service.borrow_mut().remove(&id).ok_or_else(|| Error::NotFound {
+        msg: format!("Rental with id={} not found", id),
+    }))
 }
 
 #[derive(candid::CandidType, Deserialize, Serialize)]
@@ -106,7 +104,7 @@ enum Error {
 }
 
 fn _get_rental(id: &u64) -> Option<Rental> {
-    RENTAL_STORAGE.with(|service| service.borrow().get(id))
+    RENTAL_STORAGE.with(|service| service.borrow().get(id).cloned())
 }
 
 // Need this to generate candid.
