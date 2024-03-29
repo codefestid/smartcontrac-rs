@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate serde;
 use candid::{Decode, Encode};
-use ic_cdk::api::time;
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
 use ic_stable_structures::{BoundedStorable, Cell, DefaultMemoryImpl, StableBTreeMap, Storable};
 use std::{borrow::Cow, cell::RefCell};
@@ -69,14 +68,20 @@ fn get_rental(id: u64) -> Result<Rental, Error> {
 }
 
 #[ic_cdk::update]
-fn add_rental(input: RentalInput) -> Option<Rental> {
+fn add_rental(input: RentalInput) -> Result<Rental, Error> {
+    // Ensure input fields are not empty or invalid
+    if input.motorcycle_brand.is_empty() || input.rental_date.is_empty() || input.renter_name.is_empty() || input.rental_days == 0 {
+        return Err(Error::InvalidInput {
+            msg: "Some fields are empty or invalid".to_string(),
+        });
+    }
+
     let id = ID_COUNTER
         .with(|counter| {
             let current_value = *counter.borrow().get();
-            counter.borrow_mut().set(current_value + 1)?;
-            Ok(current_value)
+            counter.borrow_mut().set(current_value + 1)
         })
-        .ok()?;
+        .expect("cannot increment id counter");
 
     let rental = Rental {
         id,
@@ -87,24 +92,68 @@ fn add_rental(input: RentalInput) -> Option<Rental> {
         rental_days: input.rental_days,
     };
 
-    RENTAL_STORAGE.with(|service| service.borrow_mut().insert(id, rental.clone()));
-    Some(rental)
+    do_insert_study_group(&rental);
+    Ok(rental)
+}
+
+// Helper method to insert study group into storage
+fn do_insert_study_group(rental: &Rental) {
+    RENTAL_STORAGE.with(|service| service.borrow_mut().insert(rental.id, rental.clone()));
+}
+
+
+#[ic_cdk::update]
+fn update_rental(id: u64, input: RentalInput) -> Result<Rental, Error> {
+    match _get_rental(&id) {
+        Some(mut rental) => {
+            // Ensure input fields are not empty or invalid
+            if input.motorcycle_brand.is_empty() || input.rental_date.is_empty() || input.renter_name.is_empty() || input.rental_days == 0 {
+                return Err(Error::InvalidInput {
+                    msg: "Some fields are empty or invalid".to_string(),
+                });
+            }
+
+            // Update the rental with new values
+            rental.motorcycle_brand = input.motorcycle_brand;
+            rental.daily_rate = input.daily_rate;
+            rental.rental_date = input.rental_date;
+            rental.renter_name = input.renter_name;
+            rental.rental_days = input.rental_days;
+            // Update the rental's updated_at timestamp
+            rental.updated_at = Some(time());
+
+            // Update the rental in storage
+            RENTAL_STORAGE.with(|service| service.borrow_mut().insert(id, rental.clone()));
+
+            Ok(rental)
+        }
+        None => Err(Error::NotFound {
+            msg: format!("Rental with id={} not found", id),
+        }),
+    }
 }
 
 #[ic_cdk::update]
 fn delete_rental(id: u64) -> Result<Rental, Error> {
-    RENTAL_STORAGE.with(|service| service.borrow_mut().remove(&id).ok_or_else(|| Error::NotFound {
-        msg: format!("Rental with id={} not found", id),
-    }))
+    RENTAL_STORAGE.with(|service| {
+        service
+            .borrow_mut()
+            .remove(&id)
+            .ok_or_else(|| Error::NotFound {
+                msg: format!("Rental with id={} not found", id),
+            })
+    })
 }
 
 #[derive(candid::CandidType, Deserialize, Serialize)]
 enum Error {
     NotFound { msg: String },
+    InvalidInput { msg: String }
 }
 
+// Helper method to get a study group by ID
 fn _get_rental(id: &u64) -> Option<Rental> {
-    RENTAL_STORAGE.with(|service| service.borrow().get(id).cloned())
+    RENTAL_STORAGE.with(|service| service.borrow().get(id).clone())
 }
 
 // Need this to generate candid.
