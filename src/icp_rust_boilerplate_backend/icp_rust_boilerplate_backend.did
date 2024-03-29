@@ -1,22 +1,44 @@
-type Error = variant { NotFound : record { msg : text } };
-type Rental = record {
+type Error = variant {
+  InvalidInput : record { msg : text };
+  NotFound : record { msg : text };
+};
+type LanguageLearningContent = record {
   id : nat64;
-  daily_rate : nat64;
-  motorcycle_brand : text;
-  rental_date : text;
-  rental_days : nat64;
-  renter_name : text;
+  updated_at : opt nat64;
+  image_url : text;
+  "text" : text;
+  sound_url : text;
+  created_at : nat64;
+  scent_description : text;
 };
-type RentalInput = record {
-  daily_rate : nat64;
-  motorcycle_brand : text;
-  rental_date : text;
-  rental_days : nat64;
-  renter_name : text;
+type LanguageLearningContentPayload = record {
+  image_url : text;
+  "text" : text;
+  sound_url : text;
+  scent_description : text;
 };
-type Result = variant { Ok : Rental; Err : Error };
+type Result = variant { Ok : LanguageLearningContent; Err : Error };
+type Result_1 = variant { Ok : StudyGroup; Err : Error };
+type StudyGroup = record { id : nat64; members : vec text; name : text };
+type StudyGroupPayload = record { members : vec text; name : text };
 service : {
-  add_rental : (RentalInput) -> (opt Rental);
-  delete_rental : (nat64) -> (Result);
-  get_rental : (nat64) -> (Result) query;
+  add_language_content : (LanguageLearningContentPayload) -> (Result);
+  create_study_group : (StudyGroupPayload) -> (Result_1);
+  delete_language_content : (nat64) -> (Result);
+  delete_study_group : (nat64) -> (Result_1);
+  filter_language_content_by_scent : (text) -> (
+      vec LanguageLearningContent,
+    ) query;
+  get_language_content : (nat64) -> (Result) query;
+  get_study_group : (nat64) -> (Result_1) query;
+  list_language_content : () -> (vec LanguageLearningContent) query;
+  list_study_groups : () -> (vec StudyGroup) query;
+  search_language_content_by_text : (text) -> (
+      vec LanguageLearningContent,
+    ) query;
+  sort_language_content_by_creation_date : () -> (
+      vec LanguageLearningContent,
+    ) query;
+  update_language_content : (nat64, LanguageLearningContentPayload) -> (Result);
+  update_study_group : (nat64, StudyGroupPayload) -> (Result_1);
 }
